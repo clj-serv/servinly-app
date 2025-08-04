@@ -1,0 +1,18 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Force test styles */
+.bg-gradient-to-br {
+  background: linear-gradient(to bottom right, #2563eb, #7c3aed) !important;
+}
+
+.bg-blue-600 {
+  background-color: #2563eb !important;
+}
+
+.text-white {
+  color: white !important;
+}
+
+

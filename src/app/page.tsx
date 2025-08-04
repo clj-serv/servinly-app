@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, createContext, useContext } from 'react';
-import { User, MapPin, Clock, Star, Briefcase, Users, Settings, LogOut, Menu, X, Phone, Mail, Calendar, Award, Plus, Search, Filter } from 'lucide-react';
+import { User, MapPin, Briefcase, Users, LogOut, Menu, X, Phone, Mail, Award } from 'lucide-react';
 
 // Auth Context
 const AuthContext = createContext();
@@ -360,7 +360,7 @@ const SignInPage = ({ setCurrentPage }) => {
         </form>
 
         <p className="text-center text-gray-600">
-          Don't have an account?{' '}
+          Don&apos;t have an account?{' '}
           <button 
             onClick={() => setCurrentPage('signup')}
             className="text-blue-600 hover:underline"

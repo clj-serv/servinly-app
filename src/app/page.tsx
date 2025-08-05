@@ -18,13 +18,25 @@ const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState(null);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
+    // Set a maximum loading time of 10 seconds
+    const loadingTimeout = setTimeout(() => {
+      console.warn('Auth check timed out, continuing without authentication');
+      setLoading(false);
+    }, 10000);
+
     // Check for existing session
-    checkUser();
+    checkUser().finally(() => {
+      clearTimeout(loadingTimeout);
+    });
     
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state changed:', event);
+      setError(null); // Clear any previous errors
+      
       if (session?.user) {
         setUser(session.user);
         await loadUserProfile(session.user.id);
@@ -35,18 +47,43 @@ const AuthProvider = ({ children }) => {
       setLoading(false);
     });
 
-    return () => subscription?.unsubscribe();
+    return () => {
+      clearTimeout(loadingTimeout);
+      subscription?.unsubscribe();
+    };
   }, []);
 
   const checkUser = async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      console.log('Checking user session...');
+      
+      // Add timeout to the session check
+      const sessionPromise = supabase.auth.getSession();
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Session check timeout')), 8000)
+      );
+      
+      const { data: { session }, error } = await Promise.race([
+        sessionPromise,
+        timeoutPromise
+      ]);
+      
+      if (error) {
+        console.error('Session check error:', error);
+        setError('Connection issue. Please try refreshing.');
+        return;
+      }
+      
       if (session?.user) {
+        console.log('User session found');
         setUser(session.user);
         await loadUserProfile(session.user.id);
+      } else {
+        console.log('No user session found');
       }
     } catch (error) {
       console.error('Error checking user:', error);
+      setError('Unable to verify login status. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -54,22 +91,41 @@ const AuthProvider = ({ children }) => {
 
   const loadUserProfile = async (userId) => {
     try {
-      const { data, error } = await supabase
+      console.log('Loading user profile...');
+      
+      // Add timeout to profile loading
+      const profilePromise = supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
         .single();
+        
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Profile load timeout')), 5000)
+      );
+      
+      const { data, error } = await Promise.race([
+        profilePromise,
+        timeoutPromise
+      ]);
       
       if (!error && data) {
         setProfile(data);
+        console.log('Profile loaded successfully');
+      } else {
+        console.warn('Profile not found or error:', error);
       }
     } catch (error) {
       console.error('Error loading profile:', error);
+      // Don't set loading to false here - profile loading failure shouldn't block the app
     }
   };
 
   const signUp = async (userData) => {
     try {
+      setLoading(true);
+      setError(null);
+      
       const { data, error } = await supabase.auth.signUp({
         email: userData.email,
         password: userData.password,
@@ -100,12 +156,18 @@ const AuthProvider = ({ children }) => {
       return { data, error: null };
     } catch (error) {
       console.error('Signup error:', error);
+      setError(error.message);
       return { data: null, error };
+    } finally {
+      setLoading(false);
     }
   };
 
   const signIn = async (email, password) => {
     try {
+      setLoading(true);
+      setError(null);
+      
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password
@@ -115,18 +177,25 @@ const AuthProvider = ({ children }) => {
       return { data, error: null };
     } catch (error) {
       console.error('Signin error:', error);
+      setError(error.message);
       return { data: null, error };
+    } finally {
+      setLoading(false);
     }
   };
 
   const signOut = async () => {
     try {
+      setLoading(true);
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
       setUser(null);
       setProfile(null);
     } catch (error) {
       console.error('Signout error:', error);
+      setError('Sign out failed. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -150,15 +219,23 @@ const AuthProvider = ({ children }) => {
     }
   };
 
+  const retryConnection = () => {
+    setError(null);
+    setLoading(true);
+    checkUser();
+  };
+
   return (
     <AuthContext.Provider value={{ 
       user, 
       profile, 
       loading, 
+      error,
       signUp, 
       signIn, 
       signOut, 
-      updateProfile 
+      updateProfile,
+      retryConnection
     }}>
       {children}
     </AuthContext.Provider>
@@ -224,16 +301,51 @@ const AppRouter = ({ currentPage, setCurrentPage }) => {
   }
 };
 
-// Loading Screen
-const LoadingScreen = () => (
-  <div className="min-h-screen bg-gradient-to-br from-blue-600 to-purple-700 flex items-center justify-center">
-    <div className="text-center">
-      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
-      <h2 className="text-2xl font-bold text-white mb-2">Servinly</h2>
-      <p className="text-blue-100">Loading your professional platform...</p>
+// Improved Loading Screen with Error Handling
+const LoadingScreen = () => {
+  const { error, retryConnection } = useAuth();
+  
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-600 to-purple-700 flex items-center justify-center p-4">
+        <div className="text-center bg-white rounded-lg p-8 max-w-md">
+          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Connection Issue</h2>
+          <p className="text-gray-600 mb-6">{error}</p>
+          <div className="space-y-3">
+            <button
+              onClick={retryConnection}
+              className="w-full bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Try Again
+            </button>
+            <button
+              onClick={() => window.location.reload()}
+              className="w-full bg-gray-200 text-gray-700 px-6 py-3 rounded-lg hover:bg-gray-300 transition-colors"
+            >
+              Refresh Page
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-600 to-purple-700 flex items-center justify-center">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+        <h2 className="text-2xl font-bold text-white mb-2">Servinly</h2>
+        <p className="text-blue-100">Loading your professional platform...</p>
+        
+        {/* Show helpful message after 5 seconds */}
+        <div className="mt-4 text-sm text-blue-200">
+          <p>Taking longer than usual? Check your internet connection.</p>
+        </div>
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 // Landing Page
 const LandingPage = ({ setCurrentPage }) => {

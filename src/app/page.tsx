@@ -10,70 +10,6 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 // Real Supabase client
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  auth: {
-    signUp: async ({ email, password, options }) => {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Mock successful signup
-      const user = {
-        id: `user_${Date.now()}`,
-        email,
-        user_metadata: options?.data || {},
-        created_at: new Date().toISOString()
-      };
-      
-      return {
-        data: { user, session: { access_token: 'mock_token', user } },
-        error: null
-      };
-    },
-    
-    signInWithPassword: async ({ email, password }) => {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Mock successful signin
-      const user = {
-        id: 'user_123',
-        email,
-        user_metadata: { firstName: 'Alex', lastName: 'Johnson' },
-        created_at: '2024-01-01T00:00:00Z'
-      };
-      
-      return {
-        data: { user, session: { access_token: 'mock_token', user } },
-        error: null
-      };
-    },
-    
-    signOut: async () => {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      return { error: null };
-    },
-    
-    getSession: async () => {
-      return { data: { session: null }, error: null };
-    },
-    
-    onAuthStateChange: (callback) => {
-      // Mock auth state changes
-      return { data: { subscription: { unsubscribe: () => {} } } };
-    }
-  },
-  
-  from: (table) => ({
-    select: () => ({
-      eq: () => ({
-        single: async () => ({ data: null, error: null })
-      })
-    }),
-    insert: async (data) => ({ data, error: null }),
-    update: async (data) => ({ data, error: null }),
-    upsert: async (data) => ({ data, error: null })
-  })
-});
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // Auth Context
 const AuthContext = createContext();
@@ -1324,4 +1260,3 @@ const ProfilePage = ({ setCurrentPage }) => {
 };
 
 export default ServinlyApp;
-

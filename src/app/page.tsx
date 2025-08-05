@@ -4,7 +4,7 @@ import React, { useState, useEffect, createContext, useContext } from 'react';
 import { User, MapPin, Briefcase, Users, LogOut, Menu, X, Phone, Mail, Award } from 'lucide-react';
 
 // Auth Context
-const AuthContext = createContext();
+const AuthContext = createContext(null);
 
 const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);

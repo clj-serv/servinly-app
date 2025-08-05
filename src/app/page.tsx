@@ -1,12 +1,15 @@
+"use client";
+
 import React, { useState, useEffect, createContext, useContext } from 'react';
+import { createClient } from '@supabase/supabase-js';
 import { User, MapPin, Clock, Briefcase, Users, LogOut, Menu, X, Phone, Mail, Award, Plus, Eye, EyeOff, CheckCircle, AlertCircle } from 'lucide-react';
 
 // Supabase configuration
 const SUPABASE_URL = 'https://fpcyvhbjpwtubwbkrwde.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZwY3l2aGJqcHd0dWJ3Ymtyd2RlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQzNjM5MzgsImV4cCI6MjA2OTkzOTkzOH0.hS8uTcXOdNRlpYNtEm5e239uHHWprUdCzmncQW7A9X8';
 
-// Mock Supabase client for demo
-const createClient = (url, key) => ({
+// Real Supabase client
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   auth: {
     signUp: async ({ email, password, options }) => {
       // Simulate API call

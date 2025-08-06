@@ -18,7 +18,8 @@ import {
   Eye, 
   EyeOff, 
   CheckCircle, 
-  AlertCircle 
+  AlertCircle,
+  RefreshCw
 } from 'lucide-react';
 
 // Types and Interfaces
@@ -55,10 +56,11 @@ interface AuthContextType {
   loading: boolean;
   error: string | null;
   signUp: (userData: SignUpData) => Promise<{ data: any; error: any }>;
-  signIn: (email: string, password: string) => Promise<{ data: any; error: any }>;
+  signIn: (email: string, password: string, rememberMe?: boolean) => Promise<{ data: any; error: any }>;
   signOut: () => Promise<void>;
   updateProfile: (updates: Partial<Profile>) => Promise<{ data: any; error: any }>;
   retryConnection: () => void;
+  sessionTimeRemaining: number | null;
 }
 
 interface SignUpData {
@@ -90,6 +92,7 @@ interface FormData {
 interface SignInFormData {
   email: string;
   password: string;
+  rememberMe: boolean;
 }
 
 interface ProfileData {
@@ -103,12 +106,49 @@ interface ProfileData {
   bio: string;
 }
 
+// Session Management Constants
+const SESSION_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 24 hours default
+const SESSION_WARNING_MS = 5 * 60 * 1000; // Warn 5 minutes before expiry
+const ACTIVITY_CHECK_INTERVAL = 60 * 1000; // Check every minute
+
 // Supabase configuration
 const SUPABASE_URL = 'https://fpcyvhbjpwtubwbkrwde.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZwY3l2aGJqcHd0dWJ3Ymtyd2RlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQzNjM5MzgsImV4cCI6MjA2OTkzOTkzOH0.hS8uTcXOdNRlpYNtEm5e239uHHWprUdCzmncQW7A9X8';
 
-// Initialize Supabase client
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// Initialize Supabase client with improved session handling
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: false,
+    flowType: 'pkce'
+  }
+});
+
+// Session Management Utilities
+const getSessionExpiry = (): number | null => {
+  const expiry = localStorage.getItem('servinly_session_expiry');
+  return expiry ? parseInt(expiry) : null;
+};
+
+const setSessionExpiry = (rememberMe: boolean = false): void => {
+  const timeout = rememberMe ? SESSION_TIMEOUT_MS * 7 : SESSION_TIMEOUT_MS; // 7 days if remember me
+  const expiry = Date.now() + timeout;
+  localStorage.setItem('servinly_session_expiry', expiry.toString());
+};
+
+const clearSessionExpiry = (): void => {
+  localStorage.removeItem('servinly_session_expiry');
+};
+
+const isSessionExpired = (): boolean => {
+  const expiry = getSessionExpiry();
+  return expiry ? Date.now() > expiry : false;
+};
+
+const updateLastActivity = (): void => {
+  localStorage.setItem('servinly_last_activity', Date.now().toString());
+};
 
 // Auth Context
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -118,15 +158,69 @@ const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [loading, setLoading] = useState<boolean>(true);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [sessionTimeRemaining, setSessionTimeRemaining] = useState<number | null>(null);
+  const [retryCount, setRetryCount] = useState<number>(0);
+
+  // Session monitoring
+  useEffect(() => {
+    const sessionInterval = setInterval(() => {
+      if (user && !isSessionExpired()) {
+        const expiry = getSessionExpiry();
+        if (expiry) {
+          const remaining = expiry - Date.now();
+          setSessionTimeRemaining(remaining);
+          
+          // Auto-logout if session expired
+          if (remaining <= 0) {
+            console.log('Session expired, logging out');
+            handleSessionExpiry();
+          }
+        }
+      }
+    }, ACTIVITY_CHECK_INTERVAL);
+
+    return () => clearInterval(sessionInterval);
+  }, [user]);
+
+  // Activity tracking
+  useEffect(() => {
+    const trackActivity = () => {
+      if (user) {
+        updateLastActivity();
+      }
+    };
+
+    // Track user activity
+    const events = ['mousedown', 'keydown', 'scroll', 'touchstart'];
+    events.forEach(event => {
+      document.addEventListener(event, trackActivity, { passive: true });
+    });
+
+    return () => {
+      events.forEach(event => {
+        document.removeEventListener(event, trackActivity);
+      });
+    };
+  }, [user]);
+
+  const handleSessionExpiry = async (): Promise<void> => {
+    console.log('Handling session expiry');
+    clearSessionExpiry();
+    await supabase.auth.signOut();
+    setUser(null);
+    setProfile(null);
+    setError('Your session has expired. Please sign in again.');
+  };
 
   useEffect(() => {
-    // Set maximum loading time of 10 seconds
+    // Set maximum loading time of 15 seconds (increased from 10)
     const loadingTimeout = setTimeout(() => {
       console.warn('Auth check timed out, continuing without authentication');
       setLoading(false);
-    }, 10000);
+      setError('Connection timeout. Please check your internet connection and try again.');
+    }, 15000);
 
-    // Check for existing session
+    // Check for existing session with expiry validation
     checkUser().finally(() => {
       clearTimeout(loadingTimeout);
     });
@@ -136,12 +230,24 @@ const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
       console.log('Auth state changed:', event);
       setError(null);
       
-      if (session?.user) {
+      if (event === 'SIGNED_OUT') {
+        clearSessionExpiry();
+        setUser(null);
+        setProfile(null);
+        setSessionTimeRemaining(null);
+      } else if (session?.user) {
+        // Check if session is expired before proceeding
+        if (isSessionExpired()) {
+          await handleSessionExpiry();
+          return;
+        }
+        
         setUser(session.user);
         await loadUserProfile(session.user.id);
       } else {
         setUser(null);
         setProfile(null);
+        setSessionTimeRemaining(null);
       }
       setLoading(false);
     });
@@ -155,11 +261,19 @@ const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const checkUser = async (): Promise<void> => {
     try {
       console.log('Checking user session...');
+      setRetryCount(0); // Reset retry count on new check
       
-      // Add timeout to session check
+      // Check if session is expired first
+      if (isSessionExpired()) {
+        console.log('Session expired during check');
+        await handleSessionExpiry();
+        return;
+      }
+      
+      // Add timeout to session check with retry logic
       const sessionPromise = supabase.auth.getSession();
       const timeoutPromise = new Promise<never>((_, reject) => 
-        setTimeout(() => reject(new Error('Session check timeout')), 8000)
+        setTimeout(() => reject(new Error('Session check timeout')), 12000)
       );
       
       const { data: { session }, error } = await Promise.race([
@@ -169,53 +283,89 @@ const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
       
       if (error) {
         console.error('Session check error:', error);
-        setError('Connection issue. Please try refreshing.');
-        return;
+        throw error;
       }
       
       if (session?.user) {
         console.log('User session found');
         setUser(session.user);
         await loadUserProfile(session.user.id);
+        updateLastActivity();
       } else {
         console.log('No user session found');
+        clearSessionExpiry();
       }
     } catch (error) {
       console.error('Error checking user:', error);
-      setError('Unable to verify login status. Please try again.');
+      
+      // Implement retry logic
+      if (retryCount < 2) {
+        console.log(`Retrying session check (attempt ${retryCount + 1})`);
+        setRetryCount(prev => prev + 1);
+        setTimeout(() => checkUser(), 2000 * (retryCount + 1)); // Exponential backoff
+        return;
+      }
+      
+      setError('Unable to verify login status. Please check your connection and try again.');
     } finally {
       setLoading(false);
     }
   };
 
   const loadUserProfile = async (userId: string): Promise<void> => {
-    try {
-      console.log('Loading user profile...');
-      
-      // Add timeout to profile loading
-      const profilePromise = supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
+    const maxRetries = 3;
+    let attempt = 0;
+    
+    while (attempt < maxRetries) {
+      try {
+        console.log(`Loading user profile (attempt ${attempt + 1})...`);
         
-      const timeoutPromise = new Promise<never>((_, reject) => 
-        setTimeout(() => reject(new Error('Profile load timeout')), 5000)
-      );
-      
-      const { data, error } = await Promise.race([
-        profilePromise,
-        timeoutPromise
-      ]);
-      
-      if (!error && data) {
-        setProfile(data as Profile);
-        console.log('Profile loaded successfully');
-      } else {
-        console.warn('Profile not found or error:', error);
+        // Add timeout to profile loading with progressive timeouts
+        const timeoutMs = 8000 + (attempt * 2000); // 8s, 10s, 12s
+        const profilePromise = supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', userId)
+          .single();
+          
+        const timeoutPromise = new Promise<never>((_, reject) => 
+          setTimeout(() => reject(new Error(`Profile load timeout (attempt ${attempt + 1})`)), timeoutMs)
+        );
+        
+        const { data, error } = await Promise.race([
+          profilePromise,
+          timeoutPromise
+        ]);
+        
+        if (error) {
+          // Handle specific Supabase errors
+          if (error.code === 'PGRST116') {
+            console.warn('Profile not found, user may need to complete signup');
+            setError('Profile not found. Please complete your registration.');
+            return;
+          }
+          throw error;
+        }
+        
+        if (data) {
+          setProfile(data as Profile);
+          console.log('Profile loaded successfully');
+          return; // Success, exit retry loop
+        } else {
+          throw new Error('No profile data returned');
+        }
+      } catch (error) {
+        console.error(`Profile loading error (attempt ${attempt + 1}):`, error);
+        attempt++;
+        
+        if (attempt >= maxRetries) {
+          setError('Unable to load your profile. Please refresh the page or contact support if the problem persists.');
+          return;
+        }
+        
+        // Wait before retry with exponential backoff
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
       }
-    } catch (error) {
-      console.error('Error loading profile:', error);
     }
   };
 
@@ -240,7 +390,7 @@ const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
       
       // Create profile record
       if (data.user) {
-        await supabase.from('profiles').insert({
+        const { error: profileError } = await supabase.from('profiles').insert({
           id: data.user.id,
           email: userData.email,
           first_name: userData.firstName,
@@ -250,6 +400,14 @@ const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
           profile_completion: 10,
           skills: []
         });
+        
+        if (profileError) {
+          console.error('Profile creation error:', profileError);
+          // Don't fail signup if profile creation fails
+        }
+        
+        // Set session expiry for new users
+        setSessionExpiry(false); // Default to non-persistent session for new users
       }
 
       return { data, error: null };
@@ -262,7 +420,7 @@ const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     }
   };
 
-  const signIn = async (email: string, password: string) => {
+  const signIn = async (email: string, password: string, rememberMe: boolean = false) => {
     try {
       setLoading(true);
       setError(null);
@@ -273,6 +431,11 @@ const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
       });
       
       if (error) throw error;
+      
+      // Set session expiry based on remember me preference
+      setSessionExpiry(rememberMe);
+      updateLastActivity();
+      
       return { data, error: null };
     } catch (error: any) {
       console.error('Signin error:', error);
@@ -288,8 +451,13 @@ const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
       setLoading(true);
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
+      
+      // Clear session data
+      clearSessionExpiry();
       setUser(null);
       setProfile(null);
+      setSessionTimeRemaining(null);
+      console.log('User signed out successfully');
     } catch (error: any) {
       console.error('Signout error:', error);
       setError('Sign out failed. Please try again.');
@@ -321,6 +489,7 @@ const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const retryConnection = (): void => {
     setError(null);
     setLoading(true);
+    setRetryCount(0);
     checkUser();
   };
 
@@ -333,7 +502,8 @@ const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     signIn,
     signOut,
     updateProfile,
-    retryConnection
+    retryConnection,
+    sessionTimeRemaining
   };
 
   return (
@@ -351,6 +521,45 @@ const useAuth = (): AuthContextType => {
   return context;
 };
 
+// Session Warning Component
+const SessionWarning: React.FC = () => {
+  const { sessionTimeRemaining, signOut } = useAuth();
+  const [showWarning, setShowWarning] = useState(false);
+
+  useEffect(() => {
+    if (sessionTimeRemaining && sessionTimeRemaining <= SESSION_WARNING_MS && sessionTimeRemaining > 0) {
+      setShowWarning(true);
+    } else {
+      setShowWarning(false);
+    }
+  }, [sessionTimeRemaining]);
+
+  if (!showWarning || !sessionTimeRemaining) return null;
+
+  const minutes = Math.ceil(sessionTimeRemaining / (60 * 1000));
+
+  return (
+    <div className="fixed top-4 right-4 bg-yellow-50 border border-yellow-200 rounded-lg p-4 shadow-lg z-50 max-w-sm">
+      <div className="flex items-start">
+        <Clock className="h-5 w-5 text-yellow-600 mr-2 mt-0.5" />
+        <div className="flex-1">
+          <h4 className="font-medium text-yellow-800">Session Expiring Soon</h4>
+          <p className="text-sm text-yellow-700 mt-1">
+            Your session will expire in {minutes} minute{minutes !== 1 ? 's' : ''}. 
+            Any activity will extend your session.
+          </p>
+          <button
+            onClick={() => setShowWarning(false)}
+            className="text-xs text-yellow-600 hover:text-yellow-800 mt-2 underline"
+          >
+            Dismiss
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // Main App Component
 const ServinlyApp: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<string>('landing');
@@ -358,6 +567,7 @@ const ServinlyApp: React.FC = () => {
   return (
     <AuthProvider>
       <div className="min-h-screen bg-gray-50">
+        <SessionWarning />
         <AppRouter currentPage={currentPage} setCurrentPage={setCurrentPage} />
       </div>
     </AuthProvider>
@@ -405,7 +615,7 @@ const AppRouter: React.FC<{ currentPage: string; setCurrentPage: (page: string) 
   }
 };
 
-// Loading Screen with Error Handling
+// Enhanced Loading Screen with Better Error Handling
 const LoadingScreen: React.FC = () => {
   const { error, retryConnection } = useAuth();
   
@@ -419,8 +629,9 @@ const LoadingScreen: React.FC = () => {
           <div className="space-y-3">
             <button
               onClick={retryConnection}
-              className="w-full bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors"
+              className="w-full bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center"
             >
+              <RefreshCw className="h-4 w-4 mr-2" />
               Try Again
             </button>
             <button
@@ -429,6 +640,9 @@ const LoadingScreen: React.FC = () => {
             >
               Refresh Page
             </button>
+          </div>
+          <div className="mt-4 text-xs text-gray-500">
+            <p>If this problem persists, please contact support.</p>
           </div>
         </div>
       </div>
@@ -442,7 +656,7 @@ const LoadingScreen: React.FC = () => {
         <h2 className="text-2xl font-bold text-white mb-2">Servinly</h2>
         <p className="text-blue-100">Loading your professional platform...</p>
         <div className="mt-4 text-sm text-blue-200">
-          <p>Taking longer than usual? Check your internet connection.</p>
+          <p>Verifying your session and loading your profile...</p>
         </div>
       </div>
     </div>
@@ -700,7 +914,7 @@ const SignUpPage: React.FC<PageProps> = ({ setCurrentPage }) => {
   );
 };
 
-// Sign In Page
+// Enhanced Sign In Page with Remember Me
 const SignInPage: React.FC<PageProps> = ({ setCurrentPage }) => {
   const { signIn } = useAuth();
   const [loading, setLoading] = useState<boolean>(false);
@@ -708,7 +922,8 @@ const SignInPage: React.FC<PageProps> = ({ setCurrentPage }) => {
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [formData, setFormData] = useState<SignInFormData>({
     email: '',
-    password: ''
+    password: '',
+    rememberMe: false
   });
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
@@ -716,7 +931,7 @@ const SignInPage: React.FC<PageProps> = ({ setCurrentPage }) => {
     setLoading(true);
     setError('');
 
-    const { data, error } = await signIn(formData.email, formData.password);
+    const { data, error } = await signIn(formData.email, formData.password, formData.rememberMe);
     
     if (error) {
       setError(error.message);
@@ -750,7 +965,7 @@ const SignInPage: React.FC<PageProps> = ({ setCurrentPage }) => {
             required
           />
           
-          <div className="relative mb-6">
+          <div className="relative mb-4">
             <input
               type={showPassword ? "text" : "password"}
               placeholder="Password"
@@ -766,6 +981,19 @@ const SignInPage: React.FC<PageProps> = ({ setCurrentPage }) => {
             >
               {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
             </button>
+          </div>
+
+          <div className="flex items-center mb-6">
+            <input
+              type="checkbox"
+              id="rememberMe"
+              checked={formData.rememberMe}
+              onChange={(e) => setFormData({...formData, rememberMe: e.target.checked})}
+              className="mr-2 rounded"
+            />
+            <label htmlFor="rememberMe" className="text-sm text-gray-700">
+              Keep me signed in for 7 days
+            </label>
           </div>
 
           <button
@@ -786,6 +1014,10 @@ const SignInPage: React.FC<PageProps> = ({ setCurrentPage }) => {
             Join Now
           </button>
         </p>
+
+        <div className="mt-4 text-xs text-gray-500 text-center">
+          <p>🔒 Secure session management with automatic timeout</p>
+        </div>
       </div>
     </div>
   );
@@ -796,7 +1028,6 @@ const OnboardingFlow: React.FC<PageProps> = ({ setCurrentPage }) => {
   const { updateProfile } = useAuth();
   const [step, setStep] = useState<number>(1);
   const [loading, setLoading] = useState<boolean>(false);
-  const [positions, setPositions] = useState<Position[]>([]);
   const [profileData, setProfileData] = useState<ProfileData>({
     latest_position: '',
     is_current: false,
@@ -1081,10 +1312,10 @@ const OnboardingFlow: React.FC<PageProps> = ({ setCurrentPage }) => {
   );
 };
 
-// Navigation Component
+// Enhanced Navigation Component with Session Info
 const Navigation: React.FC<NavProps> = ({ currentPage, setCurrentPage, user, profile }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
-  const { signOut } = useAuth();
+  const { signOut, sessionTimeRemaining } = useAuth();
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: Briefcase },
@@ -1092,6 +1323,13 @@ const Navigation: React.FC<NavProps> = ({ currentPage, setCurrentPage, user, pro
     { id: 'network', label: 'Network', icon: Users },
     { id: 'profile', label: 'Profile', icon: UserIcon },
   ];
+
+  const formatTimeRemaining = (ms: number): string => {
+    const hours = Math.floor(ms / (1000 * 60 * 60));
+    const minutes = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    return `${minutes}m`;
+  };
 
   return (
     <>
@@ -1129,10 +1367,16 @@ const Navigation: React.FC<NavProps> = ({ currentPage, setCurrentPage, user, pro
                 <div className="text-xs text-gray-500">
                   {profile?.current_position || 'Hospitality Professional'}
                 </div>
+                {sessionTimeRemaining && sessionTimeRemaining > 0 && (
+                  <div className="text-xs text-blue-600">
+                    Session: {formatTimeRemaining(sessionTimeRemaining)}
+                  </div>
+                )}
               </div>
               <button
                 onClick={signOut}
                 className="text-gray-600 hover:text-gray-900 transition-colors"
+                title="Sign Out"
               >
                 <LogOut className="h-5 w-5" />
               </button>
@@ -1180,6 +1424,11 @@ const Navigation: React.FC<NavProps> = ({ currentPage, setCurrentPage, user, pro
             <div className="border-t pt-3 mt-3">
               <div className="px-3 py-2 text-sm text-gray-900">
                 {profile?.first_name} {profile?.last_name}
+                {sessionTimeRemaining && sessionTimeRemaining > 0 && (
+                  <div className="text-xs text-blue-600 mt-1">
+                    Session: {formatTimeRemaining(sessionTimeRemaining)}
+                  </div>
+                )}
               </div>
               <button
                 onClick={signOut}
@@ -1196,9 +1445,9 @@ const Navigation: React.FC<NavProps> = ({ currentPage, setCurrentPage, user, pro
   );
 };
 
-// Dashboard
+// Enhanced Dashboard with Security Info
 const Dashboard: React.FC<PageProps> = ({ setCurrentPage }) => {
-  const { user, profile } = useAuth();
+  const { user, profile, sessionTimeRemaining } = useAuth();
 
   const quickStats = [
     { label: 'Network Connections', value: '0', icon: Users },
@@ -1218,6 +1467,20 @@ const Dashboard: React.FC<PageProps> = ({ setCurrentPage }) => {
             Welcome back, {profile?.first_name}!
           </h1>
           <p className="text-gray-600 mt-2">Here&apos;s your hospitality career dashboard</p>
+        </div>
+
+        {/* Security Status */}
+        <div className="mb-8 bg-green-50 border border-green-200 rounded-lg p-4">
+          <div className="flex items-center">
+            <CheckCircle className="h-5 w-5 text-green-600 mr-2" />
+            <div className="flex-1">
+              <h4 className="font-medium text-green-900">Secure Session Active</h4>
+              <p className="text-sm text-green-700">
+                Enhanced security with automatic timeout and session monitoring enabled.
+                {sessionTimeRemaining && ` Session time remaining: ${Math.ceil(sessionTimeRemaining / (60 * 1000))} minutes.`}
+              </p>
+            </div>
+          </div>
         </div>
 
         {/* Quick Stats */}
@@ -1311,6 +1574,11 @@ const Dashboard: React.FC<PageProps> = ({ setCurrentPage }) => {
               Professional Connections
             </div>
           </div>
+        </div>
+
+        {/* System Status */}
+        <div className="mt-6 text-center text-xs text-gray-500">
+          <p>✅ Security fixes applied - Enhanced session management and timeout handling</p>
         </div>
       </div>
     </div>

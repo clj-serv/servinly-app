@@ -61,6 +61,9 @@ interface AuthContextType {
   updateProfile: (updates: Partial<Profile>) => Promise<{ data: any; error: any }>;
   retryConnection: () => void;
   sessionTimeRemaining: number | null;
+  resendConfirmation: (email: string) => Promise<{ data: any; error: any }>;
+  confirmEmail: (email: string, token: string) => Promise<{ data: any; error: any }>;
+  pendingConfirmationEmail: string | null;
 }
 
 interface SignUpData {
@@ -160,6 +163,7 @@ const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [error, setError] = useState<string | null>(null);
   const [sessionTimeRemaining, setSessionTimeRemaining] = useState<number | null>(null);
   const [retryCount, setRetryCount] = useState<number>(0);
+  const [pendingConfirmationEmail, setPendingConfirmationEmail] = useState<string | null>(null);
 
   // Session monitoring
   useEffect(() => {
@@ -382,13 +386,17 @@ const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
             firstName: userData.firstName,
             lastName: userData.lastName,
             userType: userData.userType
-          }
+          },
+          emailRedirectTo: `${window.location.origin}`
         }
       });
 
       if (error) throw error;
       
-      // Create profile record
+      // Set pending confirmation email for the confirmation screen
+      setPendingConfirmationEmail(userData.email);
+      
+      // Create profile record - but user won't be able to access it until confirmed
       if (data.user) {
         const { error: profileError } = await supabase.from('profiles').insert({
           id: data.user.id,
@@ -405,14 +413,62 @@ const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
           console.error('Profile creation error:', profileError);
           // Don't fail signup if profile creation fails
         }
-        
-        // Set session expiry for new users
-        setSessionExpiry(false); // Default to non-persistent session for new users
       }
 
       return { data, error: null };
     } catch (error: any) {
       console.error('Signup error:', error);
+      setError(error.message);
+      return { data: null, error };
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resendConfirmation = async (email: string) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const { data, error } = await supabase.auth.resend({
+        type: 'signup',
+        email: email,
+        options: {
+          emailRedirectTo: `${window.location.origin}`
+        }
+      });
+      
+      if (error) throw error;
+      
+      return { data, error: null };
+    } catch (error: any) {
+      console.error('Resend confirmation error:', error);
+      setError(error.message);
+      return { data: null, error };
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const confirmEmail = async (email: string, token: string) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const { data, error } = await supabase.auth.verifyOtp({
+        email,
+        token,
+        type: 'email'
+      });
+      
+      if (error) throw error;
+      
+      // Clear pending confirmation on success
+      setPendingConfirmationEmail(null);
+      
+      return { data, error: null };
+    } catch (error: any) {
+      console.error('Email confirmation error:', error);
       setError(error.message);
       return { data: null, error };
     } finally {
@@ -457,6 +513,7 @@ const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
       setUser(null);
       setProfile(null);
       setSessionTimeRemaining(null);
+      setPendingConfirmationEmail(null);
       console.log('User signed out successfully');
     } catch (error: any) {
       console.error('Signout error:', error);
@@ -503,7 +560,10 @@ const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     signOut,
     updateProfile,
     retryConnection,
-    sessionTimeRemaining
+    sessionTimeRemaining,
+    resendConfirmation,
+    confirmEmail,
+    pendingConfirmationEmail
   };
 
   return (
@@ -574,8 +634,193 @@ const ServinlyApp: React.FC = () => {
   );
 };
 
-// Router Component
-const AppRouter: React.FC<{ currentPage: string; setCurrentPage: (page: string) => void }> = ({ 
+// Email Confirmation Page
+const EmailConfirmationPage: React.FC<{ email: string; setCurrentPage: (page: string) => void }> = ({ 
+  email, 
+  setCurrentPage 
+}) => {
+  const { confirmEmail, resendConfirmation, loading } = useAuth();
+  const [verificationCode, setVerificationCode] = useState<string>('');
+  const [error, setError] = useState<string>('');
+  const [resendCount, setResendCount] = useState<number>(0);
+  const [resendCooldown, setResendCooldown] = useState<number>(0);
+  const [success, setSuccess] = useState<boolean>(false);
+
+  // Cooldown timer for resend button
+  useEffect(() => {
+    if (resendCooldown > 0) {
+      const timer = setTimeout(() => setResendCooldown(resendCooldown - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [resendCooldown]);
+
+  const handleVerificationSubmit = async (e: React.FormEvent): Promise<void> => {
+    e.preventDefault();
+    setError('');
+
+    if (!verificationCode || verificationCode.length !== 6) {
+      setError('Please enter a 6-digit verification code');
+      return;
+    }
+
+    const { data, error } = await confirmEmail(email, verificationCode);
+    
+    if (error) {
+      setError(error.message || 'Invalid verification code. Please try again.');
+    } else {
+      setSuccess(true);
+      // User will be automatically redirected by auth state change
+    }
+  };
+
+  const handleResendCode = async (): Promise<void> => {
+    if (resendCooldown > 0) return;
+    
+    setError('');
+    const { data, error } = await resendConfirmation(email);
+    
+    if (error) {
+      setError(error.message || 'Failed to resend confirmation email. Please try again.');
+    } else {
+      setResendCount(prev => prev + 1);
+      setResendCooldown(60); // 60 second cooldown
+    }
+  };
+
+  const handleCodeChange = (value: string): void => {
+    // Only allow numbers and limit to 6 digits
+    const numericValue = value.replace(/\D/g, '').slice(0, 6);
+    setVerificationCode(numericValue);
+    setError('');
+  };
+
+  const formatCode = (code: string): string => {
+    // Format as XXX-XXX for better readability
+    if (code.length <= 3) return code;
+    return `${code.slice(0, 3)}-${code.slice(3)}`;
+  };
+
+  if (success) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-600 to-purple-700 flex items-center justify-center p-4">
+        <div className="bg-white rounded-lg shadow-xl p-8 w-full max-w-md text-center">
+          <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Email Verified!</h2>
+          <p className="text-gray-600 mb-6">
+            Your email has been successfully verified. You can now access your Servinly account.
+          </p>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="text-sm text-gray-500 mt-2">Redirecting you to your dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-600 to-purple-700 flex items-center justify-center p-4">
+      <div className="bg-white rounded-lg shadow-xl p-8 w-full max-w-md">
+        <div className="text-center mb-8">
+          <Mail className="h-12 w-12 text-blue-600 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Check Your Email</h2>
+          <p className="text-gray-600 mb-4">
+            We&apos;ve sent a 6-digit verification code to:
+          </p>
+          <p className="font-semibold text-gray-900 bg-gray-50 px-4 py-2 rounded-lg">
+            {email}
+          </p>
+        </div>
+
+        {error && (
+          <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg flex items-center">
+            <AlertCircle className="h-4 w-4 mr-2" />
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleVerificationSubmit}>
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Verification Code
+            </label>
+            <input
+              type="text"
+              placeholder="000-000"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-center text-lg font-mono tracking-wider"
+              value={formatCode(verificationCode)}
+              onChange={(e) => handleCodeChange(e.target.value.replace('-', ''))}
+              maxLength={7} // Account for the dash
+              autoComplete="one-time-code"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Enter the 6-digit code from your email
+            </p>
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading || verificationCode.length !== 6}
+            className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 mb-4 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {loading ? 'Verifying...' : 'Verify Email'}
+          </button>
+        </form>
+
+        <div className="text-center">
+          <p className="text-sm text-gray-600 mb-2">Didn&apos;t receive the email?</p>
+          
+          <button
+            onClick={handleResendCode}
+            disabled={resendCooldown > 0 || loading}
+            className="text-blue-600 hover:underline text-sm font-medium disabled:text-gray-400 disabled:no-underline"
+          >
+            {resendCooldown > 0 
+              ? `Resend in ${resendCooldown}s` 
+              : resendCount > 0 
+                ? 'Resend Code Again' 
+                : 'Resend Code'
+            }
+          </button>
+
+          {resendCount > 2 && (
+            <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <p className="text-yellow-800 text-xs">
+                <strong>Still having trouble?</strong><br />
+                Check your spam folder or contact our support team for assistance.
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="mt-6 pt-4 border-t">
+          <p className="text-xs text-gray-500 text-center">
+            Need to use a different email address?{' '}
+            <button 
+              onClick={() => setCurrentPage('signup')}
+              className="text-blue-600 hover:underline"
+            >
+              Sign up again
+            </button>
+          </p>
+        </div>
+
+        {/* Tips for users */}
+        <div className="mt-4 text-xs text-gray-500">
+          <details className="cursor-pointer">
+            <summary className="text-blue-600 hover:underline">
+              Email not arriving? Click for tips
+            </summary>
+            <div className="mt-2 space-y-1 pl-4">
+              <p>• Check your spam/junk folder</p>
+              <p>• Make sure you entered the correct email</p>
+              <p>• Email may take up to 5 minutes to arrive</p>
+              <p>• Add noreply@servinly.com to your contacts</p>
+            </div>
+          </details>
+        </div>
+      </div>
+    </div>
+  );
+}; string; setCurrentPage: (page: string) => void }> = ({ 
   currentPage, 
   setCurrentPage 
 }) => {

@@ -109,6 +109,11 @@ interface ProfileData {
   bio: string;
 }
 
+interface AppRouterProps {
+  currentPage: string;
+  setCurrentPage: (page: string) => void;
+}
+
 // Session Management Constants
 const SESSION_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 24 hours default
 const SESSION_WARNING_MS = 5 * 60 * 1000; // Warn 5 minutes before expiry
@@ -820,14 +825,24 @@ const EmailConfirmationPage: React.FC<{ email: string; setCurrentPage: (page: st
       </div>
     </div>
   );
-}; string; setCurrentPage: (page: string) => void }> = ({ 
-  currentPage, 
-  setCurrentPage 
-}) => {
-  const { user, profile, loading } = useAuth();
+};
+
+// App Router Component - FIXED
+const AppRouter: React.FC<AppRouterProps> = ({ currentPage, setCurrentPage }) => {
+  const { user, profile, loading, pendingConfirmationEmail } = useAuth();
 
   if (loading) {
     return <LoadingScreen />;
+  }
+
+  // Email confirmation needed
+  if (pendingConfirmationEmail) {
+    return <EmailConfirmationPage email={pendingConfirmationEmail} setCurrentPage={setCurrentPage} />;
+  }
+
+  // User exists but email not confirmed
+  if (user && !user.email_confirmed_at) {
+    return <EmailConfirmationPage email={user.email || ''} setCurrentPage={setCurrentPage} />;
   }
 
   // Not authenticated

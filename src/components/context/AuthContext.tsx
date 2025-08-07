@@ -1,15 +1,6 @@
-// src/components/context/AuthContext.tsx
-
 'use client';
 
-import React from 'react';
-import {
-  createContext,
-  useContext,
-  useState,
-  useEffect,
-  ReactNode,
-} from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { createClient, Session, User } from '@supabase/supabase-js';
 
 interface Profile {
@@ -60,11 +51,11 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
-    detectSessionInUrl: false,
+    detectSessionInUrl: true, // ✅ important for post-verification
   },
 });
 
-export const AuthContext = createContext<AuthContextType | null>(null);
+const AuthContext = createContext<AuthContextType | null>(null);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -73,8 +64,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [error, setError] = useState<string | null>(null);
   const [sessionTimeRemaining, setSessionTimeRemaining] = useState<number | null>(null);
   const [pendingConfirmationEmail, setPendingConfirmationEmail] = useState<string | null>(null);
-
-  const SESSION_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 
   const signUp = async (userData: SignUpData) => {
     setLoading(true);
@@ -87,7 +76,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           lastName: userData.lastName,
           userType: userData.userType,
         },
-        emailRedirectTo: `${window.location.origin}`,
+        emailRedirectTo: `${window.location.origin}/auth/confirm`,
       },
     });
 
@@ -109,11 +98,25 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return { data, error };
   };
 
+  const loadProfile = async (id: string) => {
+    const { data, error } = await supabase.from('profiles').select('*').eq('id', id).single();
+    if (!error) setProfile(data);
+  };
+
+  const checkSession = async () => {
+    const { data } = await supabase.auth.getSession();
+    if (data.session?.user) {
+      setUser(data.session.user);
+      await loadProfile(data.session.user.id);
+    }
+    setLoading(false);
+  };
+
   const signIn = async (email: string, password: string, rememberMe = false) => {
     setLoading(true);
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (data.session && rememberMe) {
-      const expiry = Date.now() + SESSION_TIMEOUT_MS * 7;
+      const expiry = Date.now() + 7 * 24 * 60 * 60 * 1000;
       localStorage.setItem('servinly_session_expiry', expiry.toString());
     }
     setLoading(false);
@@ -134,34 +137,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return { data, error };
   };
 
-  const loadProfile = async (id: string) => {
-    const { data, error } = await supabase.from('profiles').select('*').eq('id', id).single();
-    if (!error) setProfile(data);
-  };
-
-  const checkSession = async () => {
-    const { data } = await supabase.auth.getSession();
-    if (data.session?.user) {
-      setUser(data.session.user);
-      await loadProfile(data.session.user.id);
-    }
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    checkSession();
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) {
-        setUser(session.user);
-        loadProfile(session.user.id);
-      } else {
-        setUser(null);
-        setProfile(null);
-      }
-    });
-    return () => listener?.subscription.unsubscribe();
-  }, []);
-
   const resendConfirmation = async (email: string) => {
     return await supabase.auth.resend({ type: 'signup', email });
   };
@@ -171,6 +146,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const retryConnection = () => checkSession();
+
+  useEffect(() => {
+    checkSession();
+    const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) {
+        setUser(session.user);
+        await loadProfile(session.user.id);
+      } else {
+        setUser(null);
+        setProfile(null);
+      }
+    });
+    return () => listener.subscription.unsubscribe();
+  }, []);
 
   return (
     <AuthContext.Provider

@@ -1,10 +1,12 @@
-import React from 'react';
-import './globals.css'
-import type { Metadata } from 'next'
+import React from 'react'; // ✅ safe given your Babel setup
+import './globals.css';
+import type { Metadata, Viewport } from 'next';
+import Providers from './providers';
 
 export const metadata: Metadata = {
   title: 'Servinly - Hospitality Career Platform',
-  description: 'Build your professional profile, connect with industry peers, and discover opportunities that match your skills.',
+  description:
+    'Build your professional profile, connect with industry peers, and discover opportunities that match your skills.',
   icons: {
     icon: [
       {
@@ -13,19 +15,21 @@ export const metadata: Metadata = {
       },
     ],
   },
-  viewport: 'width=device-width, initial-scale=1',
-  themeColor: '#2563eb',
-}
+  // ❌ Do NOT put viewport or themeColor here
+};
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  themeColor: '#2563eb',
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <head />
-      <body>{children}</body>
+      <body>
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }

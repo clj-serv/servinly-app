@@ -1,0 +1,24 @@
+{
+  "rewrites": [
+    {
+      "source": "/",
+      "has": [
+        {
+          "type": "host",
+          "value": "servinly.com"
+        }
+      ],
+      "destination": "/coming-soon"
+    },
+    {
+      "source": "/",
+      "has": [
+        {
+          "type": "host",
+          "value": "www.servinly.com"
+        }
+      ],
+      "destination": "/coming-soon"
+    }
+  ]
+}

@@ -1,36 +1,48 @@
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
+import { NextResponse, NextRequest } from 'next/server';
 
-/**
- * Production-only "Coming Soon" gate.
- *
- * Behavior:
- *  - If NEXT_PUBLIC_MAINTENANCE==='1' (production env), rewrite '/' to '/coming-soon' on servinly.com.
- *  - Otherwise, still rewrite '/' to '/coming-soon' on servinly.com by default.
- *  - Never affects preview/staging*.vercel.app deployments.
- *
- * Change `rewrite` to `redirect` if you want the URL bar to show /coming-soon.
- */
+// Domains to gate in production
+const PROD_HOSTS = new Set(['servinly.com', 'www.servinly.com']);
+
+// Optional bypass cookie name (set it to view real site in prod)
+const BYPASS_COOKIE = 'SERVINLY_PREVIEW_BYPASS';
+
 export function middleware(req: NextRequest) {
-  const url = req.nextUrl;
-  const { hostname, pathname } = url;
+  // Only act in production
+  const isProd = process.env.VERCEL_ENV === 'production' || process.env.NODE_ENV === 'production';
+  if (!isProd) return NextResponse.next();
 
-  const isProdDomain =
-    hostname === 'servinly.com' || hostname === 'www.servinly.com';
+  const { pathname } = req.nextUrl;
+  const host = req.headers.get('host') || '';
 
-  const maintenanceOn = process.env.NEXT_PUBLIC_MAINTENANCE === '1';
+  // Allow coming-soon itself, static assets, api routes, next internals
+  const passthrough =
+    pathname.startsWith('/coming-soon') ||
+    pathname.startsWith('/_next') ||
+    pathname.startsWith('/api') ||
+    pathname.startsWith('/favicon') ||
+    pathname.startsWith('/robots') ||
+    pathname.startsWith('/sitemap') ||
+    pathname.match(/\.(png|jpg|jpeg|gif|svg|webp|ico|css|js|txt|json|xml)$/);
 
-  if (isProdDomain && pathname === '/') {
-    if (maintenanceOn || process.env.NEXT_PUBLIC_MAINTENANCE === undefined) {
-      const to = url.clone();
-      to.pathname = '/coming-soon';
-      return NextResponse.rewrite(to);
-      // return NextResponse.redirect(to); // <- use redirect if you prefer URL to change
-    }
+  if (passthrough) return NextResponse.next();
+
+  // Bypass if cookie present
+  if (req.cookies.get(BYPASS_COOKIE)?.value === '1') {
+    return NextResponse.next();
   }
+
+  // Gate only on our production hosts, and only the homepage
+  if (PROD_HOSTS.has(host) && pathname === '/') {
+    const url = req.nextUrl.clone();
+    url.pathname = '/coming-soon';
+    // Use rewrite to keep URL /; change to redirect if you want URL to show /coming-soon
+    return NextResponse.rewrite(url);
+    // return NextResponse.redirect(url); // <- uncomment to show /coming-soon in the bar
+  }
+
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ['/'],
+  matcher: ['/((?!_next|api|.*\.(?:png|jpg|jpeg|gif|svg|webp|ico|css|js|txt|json|xml)).*)'],
 };

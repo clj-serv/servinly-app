@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import { useEffect } from 'react';
 import { useUser } from '@supabase/auth-helpers-react';
 import { useOnboardingForm } from '@/hooks/useOnboardingForm';

@@ -1,41 +1,29 @@
-// app/page.tsx — production Coming Soon gate (no middleware needed)
-// Renders "Coming Soon" on / when deployed to Vercel Production,
-// unless a preview bypass cookie is present: servinly_preview=1
-// Local dev & Vercel preview behave as normal app shell.
-
+// app/page.tsx – Production-only Coming Soon page (no visible debug text)
 import { cookies } from 'next/headers';
 
-const IS_PROD = process.env.VERCEL === '1' && process.env.VERCEL_ENV === 'production';
-
-export default async function Page() {
+export default function Page() {
+  const isProd = process.env.VERCEL_ENV === 'production';
   const bypass = cookies().get('servinly_preview')?.value === '1';
 
-  if (IS_PROD && !bypass) {
+  if (isProd && !bypass) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-black text-white">
-        <div className="text-center px-6 py-8">
-          <h1 className="text-4xl md:text-5xl font-bold tracking-tight">Servinly</h1>
-          <p className="mt-4 text-lg opacity-90">
-            We&apos;re building something innovative. Stay tuned — launching soon.
-          </p>
-          <p className="mt-6 text-sm opacity-70">
-            (This Coming Soon screen only appears on production. Set cookie <code>servinly_preview=1</code> to bypass.)
-          </p>
-        </div>
+      <main className="min-h-screen flex items-center justify-center bg-neutral-950 text-white p-6">
+        <section className="max-w-xl text-center space-y-4">
+          <h1 className="text-3xl md:text-4xl font-semibold">Servinly</h1>
+          <p className="text-neutral-300">Something innovative is coming soon.</p>
+          <p className="text-neutral-500 text-sm">Stay tuned.</p>
+        </section>
       </main>
     );
   }
 
-  // Non-production or bypass: render a very light app shell placeholder.
-  // Replace this with your real app content as needed.
+  // Non-production (or bypass cookie set): render a minimal app shell to keep preview/dev flows working
   return (
-    <main className="min-h-screen flex items-center justify-center">
-      <div className="text-center px-6 py-8">
-        <h1 className="text-2xl font-semibold">Servinly App</h1>
-        <p className="mt-3 text-base opacity-80">
-          App shell loaded (non‑production or preview bypass). Replace with your home experience.
-        </p>
-      </div>
+    <main className="min-h-screen flex items-center justify-center p-6">
+      <section className="max-w-xl text-center space-y-2">
+        <h1 className="text-xl font-medium">Servinly App (Preview/Dev)</h1>
+        <p className="text-neutral-600 text-sm">Environment allows full app preview.</p>
+      </section>
     </main>
   );
 }

@@ -1,4 +1,4 @@
-// app/page.tsx – Production-only Coming Soon page (no visible debug text)
+// app/page.tsx – Production-only Coming Soon page (no debug text)
 import { cookies } from 'next/headers';
 
 export default function Page() {
@@ -10,14 +10,15 @@ export default function Page() {
       <main className="min-h-screen flex items-center justify-center bg-neutral-950 text-white p-6">
         <section className="max-w-xl text-center space-y-4">
           <h1 className="text-3xl md:text-4xl font-semibold">Servinly</h1>
-          <p className="text-neutral-300">Something innovative is coming soon.</p>
-          <p className="text-neutral-500 text-sm">Stay tuned.</p>
+          <p className="text-neutral-300">
+            We're building something innovative. Stay tuned — launching soon.
+          </p>
         </section>
       </main>
     );
   }
 
-  // Non-production (or bypass cookie set): render a minimal app shell to keep preview/dev flows working
+  // Non-production (or bypass cookie set): render a minimal app shell for preview/dev
   return (
     <main className="min-h-screen flex items-center justify-center p-6">
       <section className="max-w-xl text-center space-y-2">

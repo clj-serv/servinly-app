@@ -1,7 +1,7 @@
 {
   "rewrites": [
     {
-      "source": "/",
+      "source": "/(.*)",
       "has": [
         {
           "type": "host",
@@ -11,7 +11,7 @@
       "destination": "/coming-soon"
     },
     {
-      "source": "/",
+      "source": "/(.*)",
       "has": [
         {
           "type": "host",
@@ -19,6 +19,16 @@
         }
       ],
       "destination": "/coming-soon"
+    },
+    {
+      "source": "/",
+      "has": [
+        {
+          "type": "host",
+          "value": "test.servinly.com"
+        }
+      ],
+      "destination": "/test-gate"
     }
   ]
 }

@@ -1,0 +1,24 @@
+/* src/styles/theme.css */
+:root{
+  --bg:0 0% 100%;
+  --fg:230 19% 16%;
+  --card:0 0% 100%;
+  --card-fg:230 19% 16%;
+  --muted:220 14% 96%;
+  --muted-fg:228 11% 45%;
+  --border:216 12% 84%;
+  --input:216 12% 84%;
+  --ring:23 94% 50%;
+  --primary:23 94% 50%;
+  --primary-fg:0 0% 100%;
+  --accent:220 100% 97%;
+  --accent-fg:226 15% 27%;
+}
+
+html,body{
+  background:hsl(var(--bg));
+  color:hsl(var(--fg));
+  font-family:var(--font-sans),system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans;
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+}

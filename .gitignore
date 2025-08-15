@@ -54,3 +54,11 @@ yarn-error.log*
 next-env.d.ts
 .env*.local
 *.zip
+
+# =====================================
+# 🛠️ Development Server & Process Management
+# =====================================
+*.pid
+.next-server.pid
+server.pid
+dev-server.pid

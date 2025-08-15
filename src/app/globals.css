@@ -1,3 +1,11 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* design tokens */
+@import "../styles/theme.css";
+
+/* optional tweaks */
+html, body { 
+  min-height: 100%;
+}

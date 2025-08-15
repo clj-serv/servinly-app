@@ -1,0 +1,35 @@
+name: Deploy
+on:
+  push:
+    branches: [staging, main]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: npm ci
+      - run: npm run lint --if-present
+      - run: npm test
+      - run: npm run build
+      - run: npm run zip:feature --if-present
+
+  deploy-staging:
+    if: github.ref == 'refs/heads/staging'
+    needs: build-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npx vercel --token ${{ secrets.VERCEL_TOKEN }}
+      - run: supabase db push --db-url "${{ secrets.SUPABASE_STAGING_DB_URL }}"
+
+  deploy-prod:
+    if: github.ref == 'refs/heads/main'
+    needs: build-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npx vercel --prod --token ${{ secrets.VERCEL_TOKEN }}
+      - run: supabase db push --db-url "${{ secrets.SUPABASE_PROD_DB_URL }}"

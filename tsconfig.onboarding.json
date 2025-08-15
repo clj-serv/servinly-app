@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": [
+    "next-env.d.ts",
+    "src/components/layouts/OnboardingShell.tsx",
+    "src/lib/useStepRouter.ts",
+    "src/config/onboarding.flow.ts",
+    "src/lib/onboardingRouter.ts",
+    "src/app/onboarding-v2/**/*",
+    "src/app/ui-lab/onboarding-v2/page.tsx"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

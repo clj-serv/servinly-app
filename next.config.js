@@ -6,6 +6,7 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  // Basic configuration
 };
 
 module.exports = nextConfig;

@@ -1,48 +1,64 @@
 // src/app/page.tsx
-import type { Metadata } from "next";
-import { cookies } from "next/headers";
-
-export const metadata: Metadata = {
-  title: "Servinly — Coming Soon",
-  description: "We’re building something innovative. Stay tuned.",
-};
+import { redirect } from "next/navigation";
 
 export default function Page() {
-  const isProd = process.env.VERCEL_ENV === "production";
-  const bypass = cookies().get("servinly_preview")?.value === "1";
-
-  // Show landing in production (unless you set servinly_preview=1 for yourself).
-  if (isProd && !bypass) {
-    return (
-      <main className="min-h-screen flex items-center justify-center bg-neutral-950 text-white p-8">
-        <section className="max-w-xl text-center space-y-5">
-          <h1 className="text-3xl md:text-4xl font-semibold tracking-tight">Servinly</h1>
-          <p className="text-neutral-300 text-lg">
-            We’re building something innovative. Launching soon.
-          </p>
-          <p className="text-neutral-400 text-sm">
-            Want early access?{" "}
-            <a
-              href="mailto:hello@servinly.com?subject=Early%20Access"
-              className="underline underline-offset-4"
-            >
-              hello@servinly.com
-            </a>
-          </p>
-        </section>
-      </main>
-    );
-  }
-
-  // Preview/Dev: keep a minimal shell so your team can navigate features.
   return (
-    <main className="min-h-screen flex items-center justify-center p-8">
-      <section className="max-w-xl text-center space-y-3">
-        <h1 className="text-xl font-medium">Servinly App (Preview/Dev)</h1>
-        <p className="text-neutral-600 text-sm">
-          You’re in a non‑production environment.
-        </p>
-      </section>
+    <main className="min-h-screen bg-white flex items-center justify-center p-4">
+      <div className="max-w-md mx-auto text-center space-y-8">
+        {/* Circular Element - Visual Anchor */}
+        <div className="w-16 h-16 bg-blue-500 rounded-full flex items-center justify-center mx-auto mb-6">
+          <div className="w-12 h-12 bg-blue-400 rounded-full"></div>
+        </div>
+        
+        {/* Hero Section */}
+        <div className="space-y-4">
+          <h1 className="text-4xl font-bold text-gray-900 mb-2">
+            Join the Hospitality Revolution
+          </h1>
+          <p className="text-lg text-gray-600 max-w-sm mx-auto">
+            Create your hospitality profile, showcase your skills, and connect with opportunities that match your unique style.
+          </p>
+        </div>
+        
+        {/* Information Box */}
+        <div className="bg-blue-50 rounded-xl p-6 border border-blue-100 shadow-sm">
+          <p className="text-blue-700 text-sm leading-relaxed">
+            <span className="font-semibold">In just a few quick steps,</span> you'll have a professional profile that highlights your hospitality expertise and connects you with the right opportunities.
+          </p>
+        </div>
+        
+        {/* CTA Button */}
+        <div className="space-y-4">
+          <a
+            href="/signup"
+            className="inline-flex items-center justify-center w-full px-8 py-4 bg-blue-500 text-white font-semibold rounded-xl hover:bg-blue-600 transition-all duration-200 text-lg shadow-sm hover:shadow-md"
+          >
+            Get Started
+          </a>
+          
+          <a
+            href="/test-gate"
+            className="inline-flex items-center justify-center w-full px-8 py-3 bg-white text-blue-600 font-medium rounded-xl hover:bg-gray-50 transition-all duration-200 border-2 border-blue-500"
+          >
+            Try Demo
+          </a>
+        </div>
+        
+        {/* Footer Info */}
+        <div className="pt-6 border-t border-gray-200">
+          <div className="flex items-center justify-center space-x-3 text-sm text-gray-500">
+            <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center">
+              <span className="text-blue-600 font-medium text-xs">S</span>
+            </div>
+            <span>servinly.com</span>
+          </div>
+          {process.env.NODE_ENV !== 'production' && (
+            <div className="mt-4 text-sm text-center">
+              <a className="underline text-blue-600" href="/login">Developer sign in</a>
+            </div>
+          )}
+        </div>
+      </div>
     </main>
   );
 }

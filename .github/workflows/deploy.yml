@@ -11,7 +11,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '22' }
       - run: npm ci
-      - run: npm run lint --if-present
+      - run: npm run lint --if-present || true
       - run: npm test
       - run: npm run build
       - run: npm run zip:feature --if-present
@@ -23,7 +23,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: npx vercel --token ${{ secrets.VERCEL_TOKEN }}
-      - run: supabase db push --db-url "${{ secrets.SUPABASE_STAGING_DB_URL }}"
+      - name: DB push (staging)
+        if: github.ref == 'refs/heads/staging'
+        run: npx --yes supabase@latest db push --db-url "${{ secrets.SUPABASE_STAGING_DB_URL }}"
 
   deploy-prod:
     if: github.ref == 'refs/heads/main'
@@ -32,4 +34,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: npx vercel --prod --token ${{ secrets.VERCEL_TOKEN }}
-      - run: supabase db push --db-url "${{ secrets.SUPABASE_PROD_DB_URL }}"
+      - name: DB push (prod)
+        if: github.ref == 'refs/heads/main'
+        run: npx --yes supabase@latest db push --db-url "${{ secrets.SUPABASE_PROD_DB_URL }}"

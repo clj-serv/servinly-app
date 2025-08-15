@@ -21,6 +21,8 @@
     "auth:seed": "node --env-file=.env.local scripts/ensure-dev-user.ts",
     "audit:deploy": "node scripts/audit-deployment-setup.ts",
     "zip:feature": "git ls-files | zip -@ servinly-feature-$(date +%Y%m%d-%H%M).zip",
+    "ci:check": "bash scripts/check-ci-prereqs.sh",
+    "ci:staging": "bash scripts/trigger-staging.sh",
     "cleanup": "./server-cleanup.sh",
     "clean": "rm -rf .next .turbo .vercel/output"
   },
